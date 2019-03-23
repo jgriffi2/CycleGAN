@@ -45,14 +45,14 @@ def imresize(im, im_size):
 def imnormalize(im):
     return im / 255
 
-"""Load training data"""
-def load_train_data(path_to_images, im_size):
+"""Load data"""
+def load_data(path_to_images, im_size, phase='train'):
     images = []
     for path in path_to_images:
         im = imread(path)
         im = imresize(im, im_size)
 
-        if np.random.random() < 0.5:
+        if phase == 'train' and np.random.random() < 0.5:
             im = np.fliplr(im)
 
         imnormalize(im)

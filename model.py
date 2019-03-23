@@ -5,6 +5,8 @@ from module import *
 from glob import glob
 import time
 from utils import ImagePool
+from utils import *
+import os
 
 class cyclegan(object):
     def __init__(self, sess, args):
@@ -28,6 +30,7 @@ class cyclegan(object):
         self.pool = ImagePool(args.max_pool)
 
         self._build_model()
+        self.saver = tf.train.Saver()
 
     def _build_model(self):
         self.real_X = tf.placeholder(tf.float32,
@@ -84,6 +87,16 @@ class cyclegan(object):
 
         self.loss_sum = tf.summary.scalar('loss', self.loss)
 
+        self.test_X = tf.placeholder(tf.float32,
+                                     [None, self.im_size, self.im_size, self.input_nc],
+                                     name='test_X')
+        self.test_Y = tf.placeholder(tf.float32,
+                                     [None, self.im_size, self.im_size, self.output_nc],
+                                     name='test_Y')
+
+        self.fake_test_X = self.generator(self.test_Y, self.options, reuse=True, name='genYtoX')
+        self.fake_test_Y = self.generator(self.test_X, self.options, reuse=True, name='genXtoY')
+
         t_vars = tf.trainable_variables()
         self.d_vars = [var for var in t_vars if 'dis' in var.name]
         self.g_vars = [var for var in t_vars if 'gen' in var.name]
@@ -96,8 +109,8 @@ class cyclegan(object):
         self.g_optim = tf.train.AdamOptimizer(learning_rate=self.lr, name='gen_optim') \
                                               .minimize(self.g_loss, var_list=self.g_vars)
 
-        self.init_op = tf.global_variables_initializer()
-        self.sess.run(self.init_op)
+        init_op = tf.global_variables_initializer()
+        self.sess.run(init_op)
         self.writer = tf.summary.FileWriter(args.log_dir, self.sess.graph)
 
         dataX = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/trainX'))
@@ -117,8 +130,8 @@ class cyclegan(object):
                 batch_filesX = dataX[batch_num * args.batch_size : (batch_num+1) * args.batch_size]
                 batch_filesY = dataY[batch_num * args.batch_size : (batch_num+1) * args.batch_size]
 
-                batch_imagesX = load_train_data(batch_filesX, self.im_size)
-                batch_imagesY = load_train_data(batch_filesY, self.im_size)
+                batch_imagesX = load_data(batch_filesX, self.im_size)
+                batch_imagesY = load_data(batch_filesY, self.im_size)
 
                 _, summary_str, fake_X, fake_Y = self.sess.run(
                     [self.g_optim, self.g_loss_sum, self.fake_X, self.fake_Y],
@@ -134,9 +147,59 @@ class cyclegan(object):
                                self.lr: lr})
                 self.writer.add_summary(summary_str, iter)
 
+                if np.mod(iter, args.save_freq) == 0:
+                    self.save(args.checkpoint_dir, iter)
+
                 print("Epoch: [%d] [%d/%d] time: %.4f" % (epoch, batch_num, self.num_batches, time.time() - start_time))
 
                 iter += 1
 
-    def test(self):
-        pass
+    def test(self, args):
+        init_op = tf.global_variables_initializer()
+        self.sess.run(init_op)
+
+        if not self.load(args.checkpoint_dir):
+            return
+
+        filesX = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testX'))
+        filesY = glob('./datasets/{}/*.*'.format(self.dataset_dir + '/testY'))
+
+        imagesX = load_data(filesX, self.im_size, phase=args.phase)
+        imagesY = load_data(filesY, self.im_size, phase=args.phase)
+
+        fakeX, fakeY = self.sess.run([self.fake_test_X, self.fake_test_Y],
+                                     feed_dict={self.test_X: imagesX, self.test_Y: imagesY})
+
+        for i in range(len(filesX)):
+            print('/XtoY_' + os.path.basename(filesX[i]))
+            imsave(args.test_dir + '/XtoY_' + os.path.basename(filesX[i]), fakeY[i])
+
+        for i in range(len(filesY)):
+            print('/YtoX_' + os.path.basename(filesY[i]))
+            imsave(args.test_dir + '/YtoX_' + os.path.basename(filesY[i]), fakeX[i])
+
+    def load(self, checkpoint_dir):
+        print('[*] Reading checkpoint...')
+
+        model_dir = "%s_%s" % (self.dataset_dir, self.im_size)
+        checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
+        checkpoint = tf.train.get_checkpoint_state(checkpoint_dir)
+
+        if checkpoint and checkpoint.model_checkpoint_path:
+            checkpoint_name = os.path.basename(checkpoint.model_checkpoint_path)
+            self.saver.restore(self.sess, os.path.join(checkpoint_dir, checkpoint_name))
+            print('[*] Load success')
+            return True
+
+        print('[!] Load failed')
+        return False
+
+    def save(self, checkpoint_dir, iter):
+        model_name = 'cyclegan.model'
+        model_dir = "%s_%s" % (self.dataset_dir, self.im_size)
+        checkpoint_dir = os.path.join(checkpoint_dir, model_dir)
+
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+
+        self.saver.save(self.sess, os.path.join(checkpoint_dir, model_name), global_step=iter)

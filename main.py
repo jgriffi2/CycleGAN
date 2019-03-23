@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser(description='')
 parser.add_argument('--log_dir', dest='log_dir', default='./logs', help='directory where logs are stored')
 parser.add_argument('--dataset_dir', dest='dataset_dir', default='summer2winter_yosemite', help='location of dataset to train on')
 parser.add_argument('--checkpoint_dir', dest='checkpoint_dir', default='./checkpoints', help='location of checkpoints')
+parser.add_argument('--test_dir', dest='test_dir', default='./test', help='location of test outputs')
 
 # Model descriptors
 parser.add_argument('--im_size', dest='im_size', type=int, default=256, help='size of image fed into network')
@@ -27,6 +28,9 @@ parser.add_argument('--train_size', dest='train_size', type=int, default=1600, h
 parser.add_argument('--lambda', dest='lambda1', type=float, default=10, help='weight factor for cycle loss')
 parser.add_argument('--max_pool', dest='max_pool', type=int, default=50, help='max pooling size')
 
+# Save preferences
+parser.add_argument('--save_freq', dest='save_freq', type=int, default=100, help='frequency to save models')
+
 args = parser.parse_args()
 
 def main(_):
@@ -34,6 +38,8 @@ def main(_):
         os.makedirs(args.log_dir)
     if not os.path.exists(args.checkpoint_dir):
         os.makedirs(args.checkpoint_dir)
+    if not os.path.exists(args.test_dir):
+        os.makedirs(args.test_dir)
 
     tfconfig = tf.ConfigProto(allow_soft_placement=True)
     tfconfig.gpu_options.allow_growth = True
